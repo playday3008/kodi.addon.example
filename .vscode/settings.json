@@ -1,0 +1,18 @@
+{
+    "xml.validation.filters": [
+        {
+            "pattern": "**/types/xml/*.xsd",
+            "enabled": false
+        }
+    ],
+    "xml.fileAssociations": [
+        {
+            "pattern": "**/addon.xml",
+            "systemId": "${workspaceFolder}/types/xml/1.0/addon.xsd"
+        },
+        {
+            "pattern": "**/settings.xml",
+            "systemId": "${workspaceFolder}/types/xml/1.0/settings.xsd"
+        }
+    ]
+}

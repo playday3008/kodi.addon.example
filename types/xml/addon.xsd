@@ -1,0 +1,484 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Schema for Kodi addon.xml.
+     - Validated by pytest (XSD 1.1)
+     - IDE uses the generated XSD 1.0 companion in types/xml/1.0 (scripts/xsd10.py).
+
+     Self-contained by design: upstream (xbmc/xbmc @ 21.3-Omega) ships NO schema for
+     the root <addon> element - only one fragment schema per extension point under
+     addons/ - and its metadata.xsd is broken as shipped (references the undefined
+     type nonEmptyStringCapped).
+     
+     kodi-addon-checker validates each <extension> against the fragment schemas and
+     the rest against its own addon.xsd; this file mirrors that combined grammar in
+     one XSD 1.1 document, using xs:alternative to pick the <extension> content model
+     from @point. -->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:vc="http://www.w3.org/2007/XMLSchema-versioning"
+           vc:minVersion="1.1">
+
+  <!-- Root grammar:
+       - https://kodi.wiki/view/Addon.xml ("General structure")
+       - xbmc/addons/addoninfo/AddonInfoBuilder.cpp.
+       
+       All four attributes required per wiki; the runtime hard-fails only on empty id/version.
+       The runtime also parses an undocumented <backwards-compatibility abi="..."/>
+       child (Team Kodi binary add-ons only) - intentionally not modelled here. -->
+  <xs:element name="addon">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="requires" type="requiresType" minOccurs="0" />
+        <xs:element name="extension" maxOccurs="unbounded">
+          <!-- Content model per point, one alternative per upstream fragment schema.
+               Unknown/custom points (supporting add-ons pulled in as dependencies)
+               fall through to the permissive anyExtension. -->
+          <xs:alternative test="@point = ('xbmc.addon.metadata', 'kodi.addon.metadata')"
+                          type="metadataExtension" />
+          <xs:alternative test="@point = ('xbmc.python.script', 'xbmc.python.library',
+                                'xbmc.python.lyrics', 'xbmc.python.module',
+                                'xbmc.python.weather', 'xbmc.ui.screensaver',
+                                'xbmc.subtitle.module')"
+                          type="scriptExtension" />
+          <xs:alternative test="@point = 'xbmc.python.pluginsource'" type="pluginsourceExtension" />
+          <xs:alternative test="@point = 'xbmc.service'" type="serviceExtension" />
+          <xs:alternative test="@point = 'kodi.context.item'" type="contextItemExtension" />
+          <xs:alternative test="@point = 'xbmc.addon.repository'" type="repositoryExtension" />
+          <xs:alternative test="@point = 'xbmc.gui.skin'" type="skinExtension" />
+          <xs:alternative test="starts-with(@point, 'xbmc.metadata.scraper.')" type="scraperExtension" />
+          <xs:alternative test="@point = 'xbmc.webinterface'" type="webinterfaceExtension" />
+          <xs:alternative test="@point = 'kodi.resource.language'" type="resourceLanguageExtension" />
+          <xs:alternative test="@point = 'kodi.resource.images'" type="resourceImagesExtension" />
+          <xs:alternative type="anyExtension" />
+        </xs:element>
+      </xs:sequence>
+      <xs:attribute name="id" type="addonIdentifier" use="required" />
+      <xs:attribute name="name" type="xs:string" use="required" />
+      <xs:attribute name="version" type="versionString" use="required" />
+      <xs:attribute name="provider-name" type="xs:string" use="required" />
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Wiki-strict id charset ("lowercase characters, periods, underscores, dashes
+       and numbers", https://kodi.wiki/view/Addon.xml). The runtime is looser -
+       AddonInfoBuilder.cpp VALID_ADDON_IDENTIFIER_CHARACTERS also allows A-Z@!$ -
+       but the wiki rule is what the official repo expects of authors. -->
+  <xs:simpleType name="addonIdentifier">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[a-z0-9._-]+" />
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- What the official repo accepts: kodi-addon-checker
+       check_allowed_versions.py: ^\d+\.\d+(\.\d+){0,4}([+~\w]+(\.\d+)?)?$
+       (\w spelled out as [0-9A-Za-z_]: XSD \w matches far more than Python's).
+       NOT SemVer: Kodi compares versions Debian-style (xbmc/addons/AddonVersion.cpp,
+       cites debian-policy) - '~' sorts before release (use ~alpha/~beta), while a
+       SemVer '-prerelease' would parse as a REVISION sorting above the release.
+       %VERSION% is the build-time placeholder substituted by scripts/build.py. -->
+  <xs:simpleType name="versionString">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="\d+\.\d+(\.\d+){0,4}([+~0-9A-Za-z_]+(\.\d+)?)?|%VERSION%" />
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- https://kodi.wiki/view/Addon.xml ("Dependencies on other add-ons").
+       minversion is real but undocumented on the wiki: read by the runtime
+       (AddonInfoBuilder.cpp DependencyInfo) and allowed by kodi-addon-checker's
+       addon.xsd importType. -->
+  <xs:complexType name="requiresType">
+    <xs:sequence>
+      <xs:element name="import" type="requirement" minOccurs="1" maxOccurs="unbounded" />
+    </xs:sequence>
+  </xs:complexType>
+  <xs:complexType name="requirement">
+    <xs:attribute name="addon" type="addonIdentifier" use="required" />
+    <xs:attribute name="version" type="versionString" />
+    <xs:attribute name="minversion" type="versionString" />
+    <xs:attribute name="optional" type="xs:boolean" />
+  </xs:complexType>
+
+  <!-- Attributes shared by every <extension> (all upstream fragment schemas). -->
+  <xs:attributeGroup name="extensionAttrs">
+    <xs:attribute name="point" type="xs:string" use="required" />
+    <xs:attribute name="id" type="xs:string" />
+    <xs:attribute name="name" type="xs:string" />
+  </xs:attributeGroup>
+
+  <!-- addons/xbmc.addon/metadata.xsd @ 21.3-Omega (choice model as upstream: any
+       order; cardinality inside a repeated choice is not enforceable). Additions
+       over upstream, each marked: broken (legacy), thumb asset (runtime-only). -->
+  <xs:complexType name="metadataExtension">
+    <xs:choice maxOccurs="unbounded">
+      <xs:element name="summary" type="localizedString" />
+      <xs:element name="description" type="localizedString" />
+      <xs:element name="disclaimer" type="localizedString" />
+      <xs:element name="platform" type="platforms" />
+      <xs:element name="language" type="xs:string" />
+      <xs:element name="license" type="xs:string" />
+      <xs:element name="forum" type="xs:string" />
+      <xs:element name="website" type="xs:string" />
+      <xs:element name="source" type="xs:string" />
+      <xs:element name="email" type="xs:string" />
+      <xs:element name="lifecyclestate" type="translatedLifecycleState" />
+      <!-- Legacy, Leia and earlier; replaced by lifecyclestate in v19
+           (https://kodi.wiki/view/Addon.xml). Still parsed by the runtime. -->
+      <xs:element name="broken" type="nonEmptyString" />
+      <!-- 1500-char cap: kodi-addon-checker matrix_metadata.xsd nonEmptyStringCapped -->
+      <xs:element name="news" type="nonEmptyStringCapped" />
+      <!-- v18+: https://kodi.wiki/view/Addon.xml ("reuselanguageinvoker") -->
+      <xs:element name="reuselanguageinvoker" type="xs:boolean" />
+      <xs:element name="assets" type="assetsList" />
+    </xs:choice>
+    <xs:attributeGroup ref="extensionAttrs" />
+  </xs:complexType>
+
+  <!-- addons/xbmc.addon/metadata.xsd assetsList; <thumb> is runtime-only
+       (AddonInfoBuilder.cpp stores it in the art map, no doc anywhere).
+       Wiki caps screenshots at 10 - unenforceable in a choice model. -->
+  <xs:complexType name="assetsList">
+    <xs:choice maxOccurs="unbounded">
+      <xs:element name="icon" type="xs:string" />
+      <xs:element name="fanart" type="xs:string" />
+      <xs:element name="banner" type="xs:string" />
+      <xs:element name="clearlogo" type="xs:string" />
+      <xs:element name="thumb" type="xs:string" />
+      <xs:element name="screenshot" type="xs:string" />
+    </xs:choice>
+  </xs:complexType>
+
+  <!-- addons/xbmc.python/script.xsd @ 21.3-Omega: shared by python.{script,library,
+       lyrics,module,weather}, ui.screensaver, subtitle.module (its simpleIdentifier
+       pattern names exactly these). library required even for xbmc.python.module. -->
+  <xs:complexType name="scriptExtension">
+    <xs:sequence>
+      <xs:element name="provides" type="providesList" minOccurs="0" />
+    </xs:sequence>
+    <xs:attributeGroup ref="extensionAttrs" />
+    <xs:attribute name="library" type="xs:string" use="required" />
+  </xs:complexType>
+
+  <!-- addons/xbmc.python/pluginsource.xsd @ 21.3-Omega -->
+  <xs:complexType name="pluginsourceExtension">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="provides" type="providesList" />
+      <xs:element name="medialibraryscanpath" type="scanPathType" />
+    </xs:choice>
+    <xs:attributeGroup ref="extensionAttrs" />
+    <xs:attribute name="library" type="xs:string" use="required" />
+  </xs:complexType>
+  <xs:complexType name="scanPathType">
+    <xs:simpleContent>
+      <xs:extension base="xs:string">
+        <xs:attribute name="content" use="required">
+          <xs:simpleType>
+            <xs:restriction base="xs:string">
+              <xs:enumeration value="albums" />
+              <xs:enumeration value="artists" />
+              <xs:enumeration value="movies" />
+              <xs:enumeration value="musicvideos" />
+              <xs:enumeration value="tvshows" />
+            </xs:restriction>
+          </xs:simpleType>
+        </xs:attribute>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+
+  <!-- addons/xbmc.python/service.xsd @ 21.3-Omega: no child elements. start took
+       startup|login historically; ignored since v19 (services always start at
+       login) but still legal, hence untyped. -->
+  <xs:complexType name="serviceExtension">
+    <xs:attributeGroup ref="extensionAttrs" />
+    <xs:attribute name="library" type="xs:string" use="required" />
+    <xs:attribute name="start" type="xs:string" />
+  </xs:complexType>
+
+  <!-- addons/xbmc.python/contextitem.xsd @ 21.3-Omega (recursive menus); the
+       optional args attribute comes from kodi-addon-checker matrix_contextitem.xsd. -->
+  <xs:complexType name="contextItemExtension">
+    <xs:sequence>
+      <xs:element name="menu" type="contextMenuType" maxOccurs="unbounded" />
+    </xs:sequence>
+    <xs:attributeGroup ref="extensionAttrs" />
+  </xs:complexType>
+  <xs:complexType name="contextMenuType">
+    <xs:choice maxOccurs="unbounded">
+      <xs:element name="label" type="xs:string" minOccurs="0" />
+      <xs:element name="item" type="contextItemType" minOccurs="0" maxOccurs="unbounded" />
+      <xs:element name="menu" type="contextMenuType" minOccurs="0" maxOccurs="unbounded" />
+    </xs:choice>
+    <xs:attribute name="id" type="xs:string" />
+  </xs:complexType>
+  <xs:complexType name="contextItemType">
+    <xs:all>
+      <xs:element name="label" type="xs:string" />
+      <xs:element name="visible" type="xs:string" />
+    </xs:all>
+    <xs:attribute name="library" type="xs:string" use="required" />
+    <xs:attribute name="args" type="xs:string" />
+  </xs:complexType>
+
+  <!-- Deliberate deviation from Kodi's shipped schema
+       (addons/xbmc.addon/repository.xsd @ 21.3-Omega, which still documents
+       only the flat info/checksum/datadir form): the runtime is the truth.
+       xbmc/addons/Repository.cpp @ 21.3-Omega
+       (https://github.com/xbmc/xbmc/blob/21.3-Omega/xbmc/addons/Repository.cpp)
+       builds its directory list ONLY from <dir> elements and logs
+       "uses old schema definition ... no longer supported" for the flat form,
+       which was removed in v20 Nexus
+       (https://kodi.wiki/view/Add-on_repositories#Repository_Add-on).
+       Reference layout: addons/repository.xbmc.org/addon.xml. -->
+  <xs:complexType name="repositoryExtension">
+    <xs:sequence>
+      <xs:element name="dir" maxOccurs="unbounded">
+        <xs:complexType>
+          <xs:all>
+            <xs:element name="info">
+              <xs:complexType>
+                <xs:simpleContent>
+                  <xs:extension base="xs:string">
+                    <xs:attribute name="compressed" type="xs:boolean" />
+                  </xs:extension>
+                </xs:simpleContent>
+              </xs:complexType>
+            </xs:element>
+            <xs:element name="checksum">
+              <xs:complexType>
+                <xs:simpleContent>
+                  <xs:extension base="xs:string">
+                    <xs:attribute name="verify" type="xs:string" />
+                  </xs:extension>
+                </xs:simpleContent>
+              </xs:complexType>
+            </xs:element>
+            <xs:element name="datadir">
+              <xs:complexType>
+                <xs:simpleContent>
+                  <xs:extension base="xs:string">
+                    <xs:attribute name="zip" type="xs:boolean" />
+                  </xs:extension>
+                </xs:simpleContent>
+              </xs:complexType>
+            </xs:element>
+            <xs:element name="artdir" type="xs:string" minOccurs="0" />
+            <xs:element name="hashes" type="xs:string" minOccurs="0" />
+          </xs:all>
+          <xs:attribute name="minversion" type="xs:string" />
+          <xs:attribute name="maxversion" type="xs:string" />
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
+    <xs:attributeGroup ref="extensionAttrs" />
+  </xs:complexType>
+
+  <!-- addons/xbmc.gui/skin.xsd @ 21.3-Omega -->
+  <xs:complexType name="skinExtension">
+    <xs:sequence>
+      <xs:element name="res" type="skinResolution" minOccurs="0" maxOccurs="unbounded" />
+    </xs:sequence>
+    <xs:attributeGroup ref="extensionAttrs" />
+    <xs:attribute name="defaultresolution" type="xs:string" />
+    <xs:attribute name="defaultwideresolution" type="xs:string" />
+    <xs:attribute name="effectslowdown" type="xs:decimal" />
+    <xs:attribute name="debugging" type="xs:boolean" />
+    <xs:attribute name="defaultthemename" type="xs:string" />
+  </xs:complexType>
+  <xs:complexType name="skinResolution">
+    <xs:attribute name="width" type="xs:positiveInteger" use="required" />
+    <xs:attribute name="height" type="xs:positiveInteger" use="required" />
+    <xs:attribute name="aspect" type="xs:string" use="required" />
+    <xs:attribute name="default" type="xs:boolean" use="required" />
+    <xs:attribute name="folder" type="xs:string" use="required" />
+  </xs:complexType>
+
+  <!-- addons/xbmc.metadata/scraper.xsd @ 21.3-Omega (covers all six
+       xbmc.metadata.scraper.* points; no child elements). -->
+  <xs:complexType name="scraperExtension">
+    <xs:attributeGroup ref="extensionAttrs" />
+    <xs:attribute name="library" type="xs:string" use="required" />
+    <xs:attribute name="language" type="xs:string" />
+    <xs:attribute name="requiressetting" type="xs:boolean" />
+    <xs:attribute name="cachepersistence" type="xs:string" />
+  </xs:complexType>
+
+  <!-- addons/xbmc.webinterface/webinterface.xsd @ 21.3-Omega -->
+  <xs:complexType name="webinterfaceExtension">
+    <xs:attributeGroup ref="extensionAttrs" />
+    <xs:attribute name="type">
+      <xs:simpleType>
+        <xs:restriction base="xs:string">
+          <xs:enumeration value="static" />
+          <xs:enumeration value="html" />
+          <xs:enumeration value="wsgi" />
+        </xs:restriction>
+      </xs:simpleType>
+    </xs:attribute>
+    <xs:attribute name="library" type="xs:string" />
+    <xs:attribute name="entry" type="xs:string" />
+  </xs:complexType>
+
+  <!-- addons/kodi.resource/language.xsd @ 21.3-Omega -->
+  <xs:complexType name="resourceLanguageExtension">
+    <xs:all>
+      <xs:element name="charsets">
+        <xs:complexType>
+          <xs:all>
+            <xs:element name="gui" minOccurs="0">
+              <xs:complexType>
+                <xs:simpleContent>
+                  <xs:extension base="xs:string">
+                    <xs:attribute name="unicodefont" type="xs:boolean" />
+                  </xs:extension>
+                </xs:simpleContent>
+              </xs:complexType>
+            </xs:element>
+            <xs:element name="subtitle" type="xs:string" minOccurs="0" />
+          </xs:all>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="sorttokens" minOccurs="0">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="token" maxOccurs="unbounded">
+              <xs:complexType>
+                <xs:simpleContent>
+                  <xs:extension base="xs:string">
+                    <xs:attribute name="separators" type="xs:string" />
+                  </xs:extension>
+                </xs:simpleContent>
+              </xs:complexType>
+            </xs:element>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="dvd" minOccurs="0">
+        <xs:complexType>
+          <xs:all>
+            <xs:element name="menu" type="xs:string" minOccurs="0" />
+            <xs:element name="audio" type="xs:string" minOccurs="0" />
+            <xs:element name="subtitle" type="xs:string" minOccurs="0" />
+          </xs:all>
+        </xs:complexType>
+      </xs:element>
+    </xs:all>
+    <xs:attributeGroup ref="extensionAttrs" />
+    <xs:attribute name="locale" type="langIdentifier" />
+    <xs:attribute name="language" type="xs:string" />
+    <xs:attribute name="region" type="xs:string" />
+  </xs:complexType>
+
+  <!-- addons/kodi.resource/images.xsd @ 21.3-Omega -->
+  <xs:complexType name="resourceImagesExtension">
+    <xs:attributeGroup ref="extensionAttrs" />
+    <xs:attribute name="compile" type="xs:boolean" />
+    <xs:attribute name="type" type="xs:string" />
+  </xs:complexType>
+
+  <!-- Fallback for points with no upstream schema (kodi.resource.{uisounds,font,
+       games}, xbmc.player.musicviz, binary add-on points, custom ids). Add-ons
+       whose point isn't a known category simply can't be user-installed - they are
+       supporting add-ons pulled in as dependencies (https://kodi.wiki/view/Addon.xml). -->
+  <xs:complexType name="anyExtension">
+    <xs:sequence>
+      <xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax" />
+    </xs:sequence>
+    <xs:attribute name="point" type="addonIdentifier" use="required" />
+    <xs:anyAttribute processContents="lax" />
+  </xs:complexType>
+
+  <!-- upstream script.xsd/pluginsource.xsd providesList @ 21.3-Omega ('game'
+       included there; wiki's list predates it). -->
+  <xs:simpleType name="providesList">
+    <xs:list itemType="providesValue" />
+  </xs:simpleType>
+  <xs:simpleType name="providesValue">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="audio" />
+      <xs:enumeration value="executable" />
+      <xs:enumeration value="game" />
+      <xs:enumeration value="image" />
+      <xs:enumeration value="video" />
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Like upstream metadata.xsd translatedString, but lang optional: defaults to
+       en_GB (https://kodi.wiki/view/Addon.xml, "Localisation"). -->
+  <xs:complexType name="localizedString">
+    <xs:simpleContent>
+      <xs:extension base="xs:string">
+        <xs:attribute name="lang" type="langIdentifier" />
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+  <!-- upstream metadata.xsd langIdentifier @ 21.3-Omega -->
+  <xs:simpleType name="langIdentifier">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[a-z]{2,3}(_[A-Z]{2}(@\S+)?)?" />
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- upstream metadata.xsd translatedLifecycleState @ 21.3-Omega; its base type
+       nonEmptyStringCapped is undefined upstream (broken as shipped) - definition
+       taken from kodi-addon-checker matrix_metadata.xsd. -->
+  <xs:complexType name="translatedLifecycleState">
+    <xs:simpleContent>
+      <xs:extension base="nonEmptyStringCapped">
+        <xs:attribute name="type" use="required">
+          <xs:simpleType>
+            <xs:restriction base="xs:string">
+              <xs:enumeration value="normal" />
+              <xs:enumeration value="deprecated" />
+              <xs:enumeration value="broken" />
+            </xs:restriction>
+          </xs:simpleType>
+        </xs:attribute>
+        <xs:attribute name="lang" type="langIdentifier" />
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+  <!-- kodi-addon-checker matrix_metadata.xsd nonEmptyString/nonEmptyStringCapped
+       (news cap 1500 also stated on https://kodi.wiki/view/Addon.xml). -->
+  <xs:simpleType name="nonEmptyString">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="\s*([^\s]\s*)+" />
+    </xs:restriction>
+  </xs:simpleType>
+  <xs:simpleType name="nonEmptyStringCapped">
+    <xs:restriction base="nonEmptyString">
+      <xs:maxLength value="1500" />
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Union of the upstream metadata.xsd platformType enum @ 21.3-Omega (which has
+       freebsd but no arch-suffixed values) and the wiki's longer list incl.
+       per-arch and tvos (v19+) values. The runtime never validates platform names
+       (AddonInfoBuilder.cpp splits on whitespace and matches per build). -->
+  <xs:simpleType name="platforms">
+    <xs:list itemType="platformName" />
+  </xs:simpleType>
+  <xs:simpleType name="platformName">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="all" />
+      <xs:enumeration value="linux" />
+      <xs:enumeration value="osx" />
+      <xs:enumeration value="osx64" />
+      <xs:enumeration value="osx-x86_64" />
+      <xs:enumeration value="osx32" />
+      <xs:enumeration value="osx-i686" />
+      <xs:enumeration value="ios" />
+      <xs:enumeration value="ios-armv7" />
+      <xs:enumeration value="ios-aarch64" />
+      <xs:enumeration value="tvos" />
+      <xs:enumeration value="tvos-aarch64" />
+      <xs:enumeration value="windx" />
+      <xs:enumeration value="windows" />
+      <xs:enumeration value="windows-i686" />
+      <xs:enumeration value="windows-x86_64" />
+      <xs:enumeration value="windowsstore" />
+      <xs:enumeration value="android" />
+      <xs:enumeration value="android-armv7" />
+      <xs:enumeration value="android-aarch64" />
+      <xs:enumeration value="android-i686" />
+      <xs:enumeration value="freebsd" />
+    </xs:restriction>
+  </xs:simpleType>
+</xs:schema>

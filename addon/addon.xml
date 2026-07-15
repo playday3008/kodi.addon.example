@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!-- Structure documented at: https://kodi.wiki/view/Addon.xml
+     The build (scripts/build.py) substitutes the placeholder tokens:
+     version from pyproject.toml, news from git history. -->
+<addon
+  id="script.example"
+  name="Example"
+  version="%VERSION%"
+  provider-name="playday3008"
+>
+  <requires>
+    <import addon="xbmc.addon" version="21.0.0" />
+    <import addon="xbmc.python" version="3.0.0" />
+  </requires>
+
+  <extension point="xbmc.addon.metadata">
+    <summary lang="en_GB">Example script add-on</summary>
+    <description lang="en_GB">Full example of a Kodi script add-on: settings with several field types (text, slider, toggle, choice list), localized labels, generated artwork, and a dialog that shows the configured values.</description>
+    <disclaimer>This is an example add-on for development purposes.</disclaimer>
+    <news>%NEWS%</news>
+    <platform>all</platform>
+    <language>en</language>
+    <license>GPL-2.0-or-later</license>
+    <website>https://kodi.tv</website>
+    <source>https://github.com/playday3008/kodi.addon.example</source>
+    <lifecyclestate type="normal">Normal</lifecyclestate>
+    <assets>
+      <icon>icon.png</icon>
+      <fanart>fanart.jpg</fanart>
+      <banner>resources/banner.jpg</banner>
+      <clearlogo>resources/clearlogo.png</clearlogo>
+      <screenshot>resources/screenshot-01.png</screenshot>
+      <screenshot>resources/screenshot-02.png</screenshot>
+      <screenshot>resources/screenshot-03.png</screenshot>
+      <screenshot>resources/screenshot-04.png</screenshot>
+    </assets>
+    <reuselanguageinvoker>false</reuselanguageinvoker>
+  </extension>
+
+  <extension point="xbmc.python.script" library="addon.py">
+    <provides>executable</provides>
+  </extension>
+
+</addon>

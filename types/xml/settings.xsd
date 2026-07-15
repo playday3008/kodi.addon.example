@@ -1,0 +1,734 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Schema for Kodi new-style (v18+/Leia) ADD-ON settings.xml.
+     - Validated by pytest (XSD 1.1)
+     - IDE uses the generated XSD 1.0 companion in types/xml/1.0 (scripts/xsd10.py).
+
+     There is NO upstream schema for this format anywhere in xbmc/xbmc (all 15 .xsd
+     files there cover addon.xml extension points). The grammar below is mined from
+     the deserializers @ 21.3-Omega:
+       - xbmc/settings/lib/SettingDefinitions.h  (every element/attribute constant)
+       - xbmc/settings/lib/Setting.cpp, ISetting.cpp, SettingSection.cpp
+       - xbmc/settings/lib/SettingDependency.cpp
+       - xbmc/settings/SettingControl.{h,cpp}
+       - xbmc/addons/settings/AddonSettings.cpp  (add-on registrations + hard errors)
+       - https://kodi.wiki/view/Add-on_settings_conversion
+
+     Content models are choice-unbounded on purpose:
+     - TinyXML reads children by name,
+       so order never matters and most mistakes are mere warnings.
+     - Enforcement is two-tier:
+       - Conditions Kodi hard-errors on (unknown setting type, missing <control>,
+         path/addon pairing, <addontype>)
+       - Full W-level control/format pairing matrix - Kodi merely warns or renders
+         those wrong, the schema rejects them by choice.
+     
+     Kodi-internal syntax (label control, filler-name options, requirement/access conditions)
+     is legal but commented as internal. -->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:vc="http://www.w3.org/2007/XMLSchema-versioning"
+           vc:minVersion="1.1">
+
+  <!-- SETTING_XML_ROOT + SETTING_XML_ROOT_VERSION (SettingDefinitions.h);
+       version="1" required: 0/missing routes add-ons to the legacy pre-Leia parser
+       (CAddonSettings::InitializeDefinitions, AddonSettings.cpp). -->
+  <xs:element name="settings">
+    <xs:complexType>
+      <xs:sequence>
+        <!-- exactly one section per add-on; id = the add-on id (AddonSettings.cpp) -->
+        <xs:element name="section" type="sectionType" />
+      </xs:sequence>
+      <xs:attribute name="version" use="required" fixed="1" />
+    </xs:complexType>
+  </xs:element>
+
+  <!-- section/category/group: SettingSection.cpp; label/help attributes are parsed
+       with QueryIntAttribute and only accepted when > 0 - they are numeric string
+       ids from strings.po (ISetting::Deserialize). before/after reference a sibling
+       id for insertion order. <visible>/<requirement> allowed at every level
+       (ISetting::Deserialize); <access> is category-only. -->
+  <xs:complexType name="sectionType">
+    <xs:choice maxOccurs="unbounded">
+      <xs:element name="visible" type="xs:boolean" minOccurs="0" />
+      <xs:element name="requirement" type="requirementType" minOccurs="0" />
+      <xs:element name="category" type="categoryType" />
+    </xs:choice>
+    <xs:attribute name="id" type="xs:string" use="required" />
+  </xs:complexType>
+
+  <xs:complexType name="categoryType">
+    <xs:choice maxOccurs="unbounded">
+      <xs:element name="visible" type="xs:boolean" minOccurs="0" />
+      <xs:element name="requirement" type="requirementType" minOccurs="0" />
+      <xs:element name="access" type="requirementType" minOccurs="0" />
+      <xs:element name="group" type="groupType" />
+    </xs:choice>
+    <xs:attribute name="id" type="xs:string" use="required" />
+    <xs:attribute name="label" type="stringId" />
+    <xs:attribute name="help" type="stringId" />
+    <xs:attribute name="before" type="xs:string" />
+    <xs:attribute name="after" type="xs:string" />
+  </xs:complexType>
+
+  <xs:complexType name="groupType">
+    <xs:choice maxOccurs="unbounded">
+      <xs:element name="visible" type="xs:boolean" minOccurs="0" />
+      <xs:element name="requirement" type="requirementType" minOccurs="0" />
+      <!-- groups may carry a title control, e.g. <control type="title"> with
+           separator styling (CSettingGroup::Deserialize, SettingSection.cpp) -->
+      <xs:element ref="control" minOccurs="0" />
+      <xs:element name="setting" maxOccurs="unbounded">
+        <!-- Conditional type assignment per @type: the set registered for add-ons =
+             core types (CSettingsManager::CreateSetting: boolean, integer, number,
+             string, action, list[...]) + CAddonSettings::InitializeSettingTypes
+             (addon, date, path, time, urlencodedstring). Anything else is a hard
+             error in Kodi -> xs:error. A type-less <setting> must be a ref
+             (CSettingsManager::CreateSetting tolerates it only for references). -->
+        <xs:alternative test="not(@type)" type="refSetting" />
+        <xs:alternative test="@type = 'boolean'" type="booleanSetting" />
+        <xs:alternative test="@type = 'integer'" type="integerSetting" />
+        <xs:alternative test="@type = 'number'" type="numberSetting" />
+        <xs:alternative test="@type = ('string', 'urlencodedstring')" type="stringSetting" />
+        <xs:alternative test="@type = 'date'" type="dateSetting" />
+        <xs:alternative test="@type = 'time'" type="timeSetting" />
+        <xs:alternative test="@type = 'path'" type="pathSetting" />
+        <xs:alternative test="@type = 'addon'" type="addonSetting" />
+        <xs:alternative test="@type = 'action'" type="actionSetting" />
+        <xs:alternative test="matches(@type,
+            '^list\[(boolean|integer|number|string|action|addon|date|path|time|urlencodedstring)\]$')"
+                        type="listSetting" />
+        <xs:alternative type="xs:error" />
+      </xs:element>
+    </xs:choice>
+    <xs:attribute name="id" type="xs:string" use="required" />
+    <xs:attribute name="label" type="stringId" />
+    <xs:attribute name="help" type="stringId" />
+    <xs:attribute name="before" type="xs:string" />
+    <xs:attribute name="after" type="xs:string" />
+  </xs:complexType>
+
+  <!-- label/help are numeric string ids (> 0), add-on range 32000-32999
+       (https://kodi.wiki/view/Add-on_settings_conversion). -->
+  <xs:simpleType name="stringId">
+    <xs:restriction base="xs:positiveInteger" />
+  </xs:simpleType>
+
+  <!-- Attributes common to every <setting>: ISetting::Deserialize (id, before,
+       after) + CSettingsManager (ref) + CSetting::Deserialize (parent). -->
+  <xs:attributeGroup name="settingAttrs">
+    <xs:attribute name="id" type="xs:string" />
+    <xs:attribute name="ref" type="xs:string" />
+    <xs:attribute name="type" type="xs:string" />
+    <xs:attribute name="label" type="stringId" />
+    <xs:attribute name="help" type="stringId" />
+    <xs:attribute name="parent" type="xs:string" />
+    <xs:attribute name="before" type="xs:string" />
+    <xs:attribute name="after" type="xs:string" />
+  </xs:attributeGroup>
+
+  <!-- Children common to every setting: CSetting::Deserialize + ISetting.
+       <default> content is typed per setting type by Kodi; modelled as xs:string
+       here (a per-type default would need nine more variant types for little
+       gain - Kodi validates it anyway). <level> 0-4 = Basic/Standard/Advanced/
+       Expert/Internal (SettingLevel enum; out of range -> Standard). -->
+  <xs:group name="settingCommon">
+    <xs:choice>
+      <xs:element name="level" minOccurs="0">
+        <xs:simpleType>
+          <xs:restriction base="xs:integer">
+            <xs:minInclusive value="0" />
+            <xs:maxInclusive value="4" />
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:element>
+      <xs:element name="default" type="xs:string" minOccurs="0" />
+      <xs:element name="visible" type="xs:boolean" minOccurs="0" />
+      <xs:element name="enable" type="xs:boolean" minOccurs="0" />
+      <xs:element ref="control" minOccurs="0" />
+      <xs:element name="dependencies" type="dependenciesType" minOccurs="0" />
+      <xs:element name="updates" type="updatesType" minOccurs="0" />
+      <xs:element name="requirement" type="requirementType" minOccurs="0" />
+    </xs:choice>
+  </xs:group>
+
+  <!-- A <control> is required unless the setting is Internal (level 4) or a
+       reference (CSetting::Deserialize hard-errors otherwise, Setting.cpp). -->
+
+  <xs:complexType name="refSetting">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:group ref="settingCommon" />
+    </xs:choice>
+    <xs:attributeGroup ref="settingAttrs" />
+    <xs:assert test="@ref" />
+  </xs:complexType>
+
+  <xs:complexType name="booleanSetting">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:group ref="settingCommon" />
+    </xs:choice>
+    <xs:attributeGroup ref="settingAttrs" />
+    <!-- W: control registration + format validation (CAddonSettings::InitializeControls,
+         SettingControl.cpp); schema is deliberately stricter than Kodi. -->
+    <xs:assert test="level = 4
+                     or control[@type = 'toggle' and (not(@format) or @format = 'boolean')]" />
+  </xs:complexType>
+
+  <!-- CSettingInt::Deserialize: minimum/step/maximum, options
+       (SETTING_XML_ELM_MINIMUM/STEP/MAXIMUM/OPTIONS, SettingDefinitions.h);
+       minimum takes an optional label attr (minimum-value label, SettingControl.cpp). -->
+  <xs:complexType name="integerSetting">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:group ref="settingCommon" />
+      <xs:element name="constraints" type="numericConstraints" minOccurs="0" />
+    </xs:choice>
+    <xs:attributeGroup ref="settingAttrs" />
+    <!-- W: control registration + format validation (CAddonSettings::InitializeControls,
+         SettingControl.cpp); schema is deliberately stricter than Kodi. -->
+    <xs:assert test="level = 4 or control[
+        (@type = 'spinner' and (not(@format) or @format = ('integer', 'string')))
+        or (@type = 'edit' and @format = 'integer')
+        or (@type = 'list' and @format = ('integer', 'string'))
+        or (@type = 'slider' and @format = ('integer', 'percentage'))]" />
+  </xs:complexType>
+
+  <!-- CSettingNumber::Deserialize (doubles) -->
+  <xs:complexType name="numberSetting">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:group ref="settingCommon" />
+      <xs:element name="constraints" type="numericConstraints" minOccurs="0" />
+    </xs:choice>
+    <xs:attributeGroup ref="settingAttrs" />
+    <!-- W: control registration + format validation (CAddonSettings::InitializeControls,
+         SettingControl.cpp); schema is deliberately stricter than Kodi. -->
+    <xs:assert test="level = 4
+                     or control[@type = ('spinner', 'edit', 'slider') and @format = 'number']" />
+  </xs:complexType>
+
+  <!-- CSettingString::Deserialize: allowempty, allownewoption, options
+       (SettingDefinitions.h SETTING_XML_ELM_ALLOWEMPTY/ALLOWNEWOPTION).
+       urlencodedstring derives from CSettingString (AddonSettings.cpp)
+       and shares this shape. -->
+  <xs:complexType name="stringSetting">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:group ref="settingCommon" />
+      <xs:element name="constraints" type="stringConstraints" minOccurs="0" />
+    </xs:choice>
+    <xs:attributeGroup ref="settingAttrs" />
+    <!-- W: control registration + format validation (CAddonSettings::InitializeControls,
+         SettingControl.cpp); schema is deliberately stricter than Kodi.
+         Also covers urlencodedstring; 'label' is Kodi-internal, kept legal. -->
+    <xs:assert test="level = 4 or control[
+        (@type = 'edit' and (not(@format) or @format = ('string', 'ip', 'md5', 'urlencoded')))
+        or (@type = ('list', 'spinner') and (not(@format) or @format = 'string'))
+        or @type = 'colorbutton'
+        or (@type = 'button' and @format = 'infolabel')
+        or @type = 'label']" />
+  </xs:complexType>
+
+  <!-- date/time derive from CSettingString (AddonSettings.cpp CSettingCreator) and
+       share the string constraints; their button[date]/button[time] pairing is
+       W-level (schema stricter by choice). -->
+  <xs:complexType name="dateSetting">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:group ref="settingCommon" />
+      <xs:element name="constraints" type="stringConstraints" minOccurs="0" />
+    </xs:choice>
+    <xs:attributeGroup ref="settingAttrs" />
+    <xs:assert test="level = 4 or control[@type = 'button' and @format = 'date']" />
+  </xs:complexType>
+
+  <xs:complexType name="timeSetting">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:group ref="settingCommon" />
+      <xs:element name="constraints" type="stringConstraints" minOccurs="0" />
+    </xs:choice>
+    <xs:attributeGroup ref="settingAttrs" />
+    <xs:assert test="level = 4 or control[@type = 'button' and @format = 'time']" />
+  </xs:complexType>
+
+  <!-- CSettingPath::Deserialize (SettingPath.cpp): writable, hideextensions,
+       sources/source, masking. Control pairing enforced by
+       CAddonSettings/CSettingControlButton: button with format path|file|image. -->
+  <xs:complexType name="pathSetting">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:group ref="settingCommon" />
+      <xs:element name="constraints" type="pathConstraints" minOccurs="0" />
+    </xs:choice>
+    <xs:attributeGroup ref="settingAttrs" />
+    <xs:assert test="level = 4 or control[@type = 'button' and @format = ('path', 'file', 'image')]" />
+  </xs:complexType>
+
+  <!-- CSettingAddon::Deserialize (SettingAddon.cpp): <addontype> is REQUIRED
+       (hard error without it); control must be button[addon]. -->
+  <xs:complexType name="addonSetting">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:group ref="settingCommon" />
+      <xs:element name="constraints" type="addonConstraints" minOccurs="0" />
+    </xs:choice>
+    <xs:attributeGroup ref="settingAttrs" />
+    <xs:assert test="constraints/addontype" />
+    <xs:assert test="level = 4 or control[@type = 'button' and @format = 'addon']" />
+  </xs:complexType>
+
+  <!-- CSettingAction: <data> holds the builtin to run; $ID/$CWD are substituted
+       (AddonSettings.cpp SETTING_XML_ELM_DATA). -->
+  <xs:complexType name="actionSetting">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:group ref="settingCommon" />
+      <xs:element name="data" type="xs:string" minOccurs="0" />
+    </xs:choice>
+    <xs:attributeGroup ref="settingAttrs" />
+    <!-- W: control registration + format validation (CAddonSettings::InitializeControls,
+         SettingControl.cpp); schema is deliberately stricter than Kodi. -->
+    <xs:assert test="level = 4
+                     or control[@type = 'button' and (not(@format) or @format = 'action')]" />
+  </xs:complexType>
+
+  <!-- CSettingList::Deserialize: element-type constraints + delimiter (default '|'),
+       minimumitems/maximumitems (SETTING_XML_ELM_DELIMITER/MINIMUM_ITEMS/
+       MAXIMUM_ITEMS, SettingDefinitions.h). Constraints are the union of all
+       element-type constraint children - per-T list variants would add nine more
+       types for little gain; Kodi validates element values itself. -->
+  <xs:complexType name="listSetting">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:group ref="settingCommon" />
+      <xs:element name="constraints" type="listConstraints" minOccurs="0" />
+    </xs:choice>
+    <xs:attributeGroup ref="settingAttrs" />
+    <!-- W: control registration + format validation (CAddonSettings::InitializeControls,
+         SettingControl.cpp); schema is deliberately stricter than Kodi. -->
+    <xs:assert test="level = 4 or control[
+        (@type = 'list' and (not(@format) or @format = ('string', 'integer')))
+        or @type = 'range'
+        or (@type = 'button' and @format = 'addon')]" />
+  </xs:complexType>
+
+  <!-- ===== constraints ===== -->
+
+  <xs:complexType name="numericConstraints">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="minimum">
+        <xs:complexType>
+          <xs:simpleContent>
+            <xs:extension base="xs:decimal">
+              <!-- minimum-value label, e.g. "Off" (CSettingControlSpinner) -->
+              <xs:attribute name="label" type="stringId" />
+            </xs:extension>
+          </xs:simpleContent>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="step" type="xs:decimal" />
+      <xs:element name="maximum" type="xs:decimal" />
+      <xs:element name="options" type="optionsType" />
+    </xs:choice>
+  </xs:complexType>
+
+  <xs:complexType name="stringConstraints">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="allowempty" type="xs:boolean" />
+      <xs:element name="allownewoption" type="xs:boolean" />
+      <xs:element name="options" type="optionsType" />
+    </xs:choice>
+  </xs:complexType>
+
+  <xs:complexType name="pathConstraints">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="allowempty" type="xs:boolean" />
+      <xs:element name="writable" type="xs:boolean" />
+      <xs:element name="hideextensions" type="xs:boolean" />
+      <!-- source values are share names passed to the file browser (videos, music,
+           pictures, programs, files, local, ...) - open set, kept untyped
+           (CSettingPath::Deserialize, SettingPath.cpp) -->
+      <xs:element name="sources">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="source" type="xs:string" maxOccurs="unbounded" />
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <!-- audio|video|image|executable or a literal mask like *.txt;
+           $AUDIO/$VIDEO/$IMAGE/$EXECUTABLE expanded (AddonSettings.cpp) -->
+      <xs:element name="masking" type="xs:string" />
+    </xs:choice>
+  </xs:complexType>
+
+  <xs:complexType name="addonConstraints">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="allowempty" type="xs:boolean" />
+      <!-- required; an addon type/extension point, e.g. xbmc.metadata.scraper.movies
+           (CSettingAddon::Deserialize hard-errors without it, SettingAddon.cpp) -->
+      <xs:element name="addontype" type="xs:string" />
+    </xs:choice>
+  </xs:complexType>
+
+  <xs:complexType name="listConstraints">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="delimiter" type="xs:string" />
+      <xs:element name="minimumitems" type="xs:nonNegativeInteger" />
+      <xs:element name="maximumitems" type="xs:nonNegativeInteger" />
+      <xs:element name="minimum">
+        <xs:complexType>
+          <xs:simpleContent>
+            <xs:extension base="xs:decimal">
+              <xs:attribute name="label" type="stringId" />
+            </xs:extension>
+          </xs:simpleContent>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="step" type="xs:decimal" />
+      <xs:element name="maximum" type="xs:decimal" />
+      <xs:element name="allowempty" type="xs:boolean" />
+      <xs:element name="allownewoption" type="xs:boolean" />
+      <xs:element name="options" type="optionsType" />
+      <xs:element name="addontype" type="xs:string" />
+    </xs:choice>
+  </xs:complexType>
+
+  <!-- SETTING_XML_ELM_OPTIONS + DeserializeOptionsSort (Setting.cpp): sort accepts
+       the GetBoolean synonyms plus asc/ascending/desc/descending. option/@label is
+       an int string-id or a literal string (int for translatable labels).
+       Kodi-internal: mixed content allows a bare filler-name text node
+       (SettingsManager option fillers) - core-only; add-ons must use <option>. -->
+  <xs:complexType name="optionsType" mixed="true">
+    <xs:sequence>
+      <xs:element name="option" minOccurs="0" maxOccurs="unbounded">
+        <xs:complexType>
+          <xs:simpleContent>
+            <xs:extension base="xs:string">
+              <xs:attribute name="label" type="xs:string" />
+            </xs:extension>
+          </xs:simpleContent>
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
+    <xs:attribute name="sort">
+      <xs:simpleType>
+        <xs:restriction base="xs:string">
+          <xs:enumeration value="false" />
+          <xs:enumeration value="off" />
+          <xs:enumeration value="no" />
+          <xs:enumeration value="disabled" />
+          <xs:enumeration value="asc" />
+          <xs:enumeration value="ascending" />
+          <xs:enumeration value="true" />
+          <xs:enumeration value="on" />
+          <xs:enumeration value="yes" />
+          <xs:enumeration value="enabled" />
+          <xs:enumeration value="desc" />
+          <xs:enumeration value="descending" />
+        </xs:restriction>
+      </xs:simpleType>
+    </xs:attribute>
+  </xs:complexType>
+
+  <!-- ===== control ===== -->
+
+  <!-- The nine control types registered for add-ons
+       (CAddonSettings::InitializeControls, AddonSettings.cpp) - core's 'label'
+       control is NOT registered for add-ons; kept syntax-legal below only as
+       Kodi-internal vocabulary. Common attrs: ISettingControl::
+       Deserialize (type required, format, delayed). -->
+  <xs:element name="control">
+    <xs:alternative test="@type = ('toggle', 'colorbutton')" type="plainControl" />
+    <xs:alternative test="@type = 'spinner'" type="spinnerControl" />
+    <xs:alternative test="@type = 'edit'" type="editControl" />
+    <xs:alternative test="@type = 'button'" type="buttonControl" />
+    <xs:alternative test="@type = 'list'" type="listControl" />
+    <xs:alternative test="@type = 'slider'" type="sliderControl" />
+    <xs:alternative test="@type = 'range'" type="rangeControl" />
+    <xs:alternative test="@type = 'title'" type="titleControl" />
+    <!-- Kodi-internal: core-only control, NOT registered for add-on settings
+         (CAddonSettings::InitializeControls omits it, AddonSettings.cpp);
+         syntax-legal here. -->
+    <xs:alternative test="@type = 'label'" type="plainControl" />
+    <xs:alternative type="xs:error" />
+  </xs:element>
+
+  <xs:attributeGroup name="controlAttrs">
+    <xs:attribute name="type" type="xs:string" use="required" />
+    <xs:attribute name="delayed" type="xs:boolean" />
+  </xs:attributeGroup>
+
+  <!-- toggle (format boolean/empty) and colorbutton (v20+, string/empty):
+       no child elements (SettingControl.cpp) -->
+  <xs:complexType name="plainControl">
+    <xs:attributeGroup ref="controlAttrs" />
+    <xs:attribute name="format" type="xs:string" />
+  </xs:complexType>
+
+  <!-- CSettingControlSpinner: formatlabel (string id) or format (format string,
+       default "{}") when format="string" (SettingControl.h "formatlabel"). -->
+  <xs:complexType name="spinnerControl">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="formatlabel" type="stringId" />
+      <xs:element name="format" type="xs:string" />
+    </xs:choice>
+    <xs:attributeGroup ref="controlAttrs" />
+    <xs:attribute name="format">
+      <xs:simpleType>
+        <xs:restriction base="xs:string">
+          <xs:enumeration value="string" />
+          <xs:enumeration value="integer" />
+          <xs:enumeration value="number" />
+        </xs:restriction>
+      </xs:simpleType>
+    </xs:attribute>
+  </xs:complexType>
+
+  <!-- CSettingControlEdit: hidden (password masking), verifynew, heading;
+       delayed defaults true for edits (SettingControl.cpp). -->
+  <xs:complexType name="editControl">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="hidden" type="xs:boolean" />
+      <xs:element name="verifynew" type="xs:boolean" />
+      <xs:element name="heading" type="stringId" />
+    </xs:choice>
+    <xs:attributeGroup ref="controlAttrs" />
+    <xs:attribute name="format">
+      <xs:simpleType>
+        <xs:restriction base="xs:string">
+          <xs:enumeration value="string" />
+          <xs:enumeration value="integer" />
+          <xs:enumeration value="number" />
+          <xs:enumeration value="ip" />
+          <xs:enumeration value="md5" />
+          <xs:enumeration value="urlencoded" />
+        </xs:restriction>
+      </xs:simpleType>
+    </xs:attribute>
+  </xs:complexType>
+
+  <!-- CSettingControlButton (SettingControl.cpp): heading, hidevalue; format=action:
+       close, data; format=addon: show (@more/@details, value all|installed|
+       installable); format=file: usethumbs, treatasfolder. -->
+  <xs:complexType name="buttonControl">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="heading" type="stringId" />
+      <xs:element name="hidevalue" type="xs:boolean" />
+      <xs:element name="close" type="xs:boolean" />
+      <xs:element name="data" type="xs:string" />
+      <xs:element name="show">
+        <xs:complexType>
+          <xs:simpleContent>
+            <xs:extension base="xs:string">
+              <xs:attribute name="more" type="xs:boolean" />
+              <xs:attribute name="details" type="xs:boolean" />
+            </xs:extension>
+          </xs:simpleContent>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="usethumbs" type="xs:boolean" />
+      <xs:element name="treatasfolder" type="xs:boolean" />
+    </xs:choice>
+    <xs:attributeGroup ref="controlAttrs" />
+    <xs:attribute name="format">
+      <xs:simpleType>
+        <xs:restriction base="xs:string">
+          <xs:enumeration value="path" />
+          <xs:enumeration value="file" />
+          <xs:enumeration value="image" />
+          <xs:enumeration value="addon" />
+          <xs:enumeration value="action" />
+          <xs:enumeration value="infolabel" />
+          <xs:enumeration value="date" />
+          <xs:enumeration value="time" />
+        </xs:restriction>
+      </xs:simpleType>
+    </xs:attribute>
+  </xs:complexType>
+
+  <!-- CSettingControlList: heading, multiselect, hidevalue, addbuttonlabel (v20+),
+       plus spinner's formatlabel/format when format="string" (SettingControl.cpp). -->
+  <xs:complexType name="listControl">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="heading" type="stringId" />
+      <xs:element name="multiselect" type="xs:boolean" />
+      <xs:element name="hidevalue" type="xs:boolean" />
+      <xs:element name="addbuttonlabel" type="stringId" />
+      <xs:element name="formatlabel" type="stringId" />
+      <xs:element name="format" type="xs:string" />
+    </xs:choice>
+    <xs:attributeGroup ref="controlAttrs" />
+    <xs:attribute name="format">
+      <xs:simpleType>
+        <xs:restriction base="xs:string">
+          <xs:enumeration value="string" />
+          <xs:enumeration value="integer" />
+        </xs:restriction>
+      </xs:simpleType>
+    </xs:attribute>
+  </xs:complexType>
+
+  <!-- CSettingControlSlider: heading, popup, formatlabel or format string
+       (defaults "{} %", "{:d}", "{:.1f}" per format; SettingControl.cpp) -->
+  <xs:complexType name="sliderControl">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="heading" type="stringId" />
+      <xs:element name="popup" type="xs:boolean" />
+      <xs:element name="formatlabel" type="stringId" />
+      <xs:element name="format" type="xs:string" />
+    </xs:choice>
+    <xs:attributeGroup ref="controlAttrs" />
+    <xs:attribute name="format">
+      <xs:simpleType>
+        <xs:restriction base="xs:string">
+          <xs:enumeration value="percentage" />
+          <xs:enumeration value="integer" />
+          <xs:enumeration value="number" />
+        </xs:restriction>
+      </xs:simpleType>
+    </xs:attribute>
+  </xs:complexType>
+
+  <!-- CSettingControlRange: formatlabel here carries a value attribute (format
+       string) unlike the plain int formatlabel elsewhere; default label 21469
+       (SettingControl.cpp). Only valid on list[T] settings with exactly two items -
+       not statically enforceable here. -->
+  <xs:complexType name="rangeControl">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="formatlabel">
+        <xs:complexType>
+          <xs:simpleContent>
+            <xs:extension base="stringId">
+              <xs:attribute name="value" type="xs:string" />
+            </xs:extension>
+          </xs:simpleContent>
+        </xs:complexType>
+      </xs:element>
+    </xs:choice>
+    <xs:attributeGroup ref="controlAttrs" />
+    <xs:attribute name="format">
+      <xs:simpleType>
+        <xs:restriction base="xs:string">
+          <xs:enumeration value="percentage" />
+          <xs:enumeration value="integer" />
+          <xs:enumeration value="number" />
+          <xs:enumeration value="date" />
+          <xs:enumeration value="time" />
+        </xs:restriction>
+      </xs:simpleType>
+    </xs:attribute>
+  </xs:complexType>
+
+  <!-- CSettingControlTitle (group headers): separatorposition/hideseparator are
+       CHILD ELEMENTS despite the SETTING_XML_ATTR_* macro names - parsed via
+       XMLUtils::GetString/GetBoolean (SettingControl.cpp). -->
+  <xs:complexType name="titleControl">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="separatorposition">
+        <xs:simpleType>
+          <xs:restriction base="xs:string">
+            <xs:enumeration value="top" />
+            <xs:enumeration value="bottom" />
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:element>
+      <xs:element name="hideseparator" type="xs:boolean" />
+    </xs:choice>
+    <xs:attributeGroup ref="controlAttrs" />
+    <xs:attribute name="format" type="xs:string" />
+  </xs:complexType>
+
+  <!-- ===== dependencies ===== -->
+
+  <!-- CSettingDependency (SettingDependency.cpp): @type required enable|visible|
+       update. Simple form: attrs + text comparison value. Nested form: and/or/
+       condition combinations, arbitrarily deep. operator: is/lessthan/lt/
+       greaterthan/gt/contains, each optionally !-prefixed (setOperator); default is.
+       on="property" uses registered InfoBool conditions - the only dynamic condition
+       registered for add-ons (AddonSettings.cpp AddDynamicCondition). -->
+  <xs:complexType name="dependenciesType">
+    <xs:sequence>
+      <xs:element name="dependency" type="dependencyType" maxOccurs="unbounded" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:attributeGroup name="conditionAttrs">
+    <xs:attribute name="setting" type="xs:string" />
+    <xs:attribute name="on">
+      <xs:simpleType>
+        <xs:restriction base="xs:string">
+          <xs:enumeration value="setting" />
+          <xs:enumeration value="property" />
+        </xs:restriction>
+      </xs:simpleType>
+    </xs:attribute>
+    <xs:attribute name="name" type="xs:string" />
+    <xs:attribute name="operator">
+      <xs:simpleType>
+        <xs:restriction base="xs:string">
+          <xs:pattern value="!?(is|lessthan|lt|greaterthan|gt|contains)" />
+        </xs:restriction>
+      </xs:simpleType>
+    </xs:attribute>
+    <xs:attribute name="negated" type="xs:boolean" />
+  </xs:attributeGroup>
+
+  <xs:complexType name="dependencyType" mixed="true">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="and" type="conditionGroupType" />
+      <xs:element name="or" type="conditionGroupType" />
+      <xs:element name="condition" type="conditionType" />
+    </xs:choice>
+    <xs:attribute name="type" use="required">
+      <xs:simpleType>
+        <xs:restriction base="xs:string">
+          <xs:enumeration value="enable" />
+          <xs:enumeration value="visible" />
+          <xs:enumeration value="update" />
+        </xs:restriction>
+      </xs:simpleType>
+    </xs:attribute>
+    <xs:attributeGroup ref="conditionAttrs" />
+  </xs:complexType>
+
+  <xs:complexType name="conditionGroupType">
+    <xs:choice maxOccurs="unbounded">
+      <xs:element name="and" type="conditionGroupType" />
+      <xs:element name="or" type="conditionGroupType" />
+      <xs:element name="condition" type="conditionType" />
+    </xs:choice>
+  </xs:complexType>
+
+  <!-- <requirement> (every level) / <access> (category): a bare condition name
+       (checked via IsDefined against build-time defines - Kodi-internal
+       vocabulary, deliberately NOT enumerated) or a nested
+       <and>/<or>/<condition> combination (ISetting.cpp, SettingConditions.cpp). -->
+  <xs:complexType name="requirementType" mixed="true">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="and" type="conditionGroupType" />
+      <xs:element name="or" type="conditionGroupType" />
+      <xs:element name="condition" type="conditionType" />
+    </xs:choice>
+  </xs:complexType>
+
+  <xs:complexType name="conditionType">
+    <xs:simpleContent>
+      <xs:extension base="xs:string">
+        <xs:attributeGroup ref="conditionAttrs" />
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+
+  <!-- CSettingUpdate (SettingUpdate.cpp): type change|rename; rename's text
+       content is the old setting id. -->
+  <xs:complexType name="updatesType">
+    <xs:sequence>
+      <xs:element name="update" maxOccurs="unbounded">
+        <xs:complexType>
+          <xs:simpleContent>
+            <xs:extension base="xs:string">
+              <xs:attribute name="type" use="required">
+                <xs:simpleType>
+                  <xs:restriction base="xs:string">
+                    <xs:enumeration value="change" />
+                    <xs:enumeration value="rename" />
+                  </xs:restriction>
+                </xs:simpleType>
+              </xs:attribute>
+            </xs:extension>
+          </xs:simpleContent>
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
+  </xs:complexType>
+</xs:schema>

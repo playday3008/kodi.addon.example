@@ -1,0 +1,122 @@
+[project]
+name = "kodi-addon-example"
+version = "1.0.0" # Corresponds to the add-on version in addon.xml
+description = "Kodi script add-on example"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    # Must be empty for Kodi add-ons, as they are not installed via pip
+]
+
+[dependency-groups]
+dev = [
+    # Tasks
+    "poethepoet>=0.30",
+    # Linters
+    "ruff>=0.15.21",
+    "mypy>=2.2.0",
+    "pyright>=1.1.411",
+    # Stubs
+    "kodistubs>=21",
+    # Testing
+    "pytest>=8.4",
+    "xmlschema>=3.4",
+]
+
+[tool.uv]
+package = false
+
+[tool.poe.tasks.build]
+help = "Build installable Kodi addon zip in ./build"
+cmd = "python scripts/build.py"
+
+[tool.poe.tasks.repo]
+help = "Build zips and generate the Kodi repository tree in ./build/repo"
+sequence = [{ ref = "build" }, { cmd = "python scripts/repo.py" }]
+
+[tool.poe.tasks.stubs]
+help = "Regenerate Kodi type stubs into ./types/python"
+cmd = "python scripts/stubs.py"
+
+[tool.poe.tasks.xsd10]
+help = "Regenerate XSD 1.0 IDE schemas into ./types/xml/1.0"
+cmd = "python scripts/xsd10.py"
+
+[tool.poe.tasks.test]
+help = "Run the test suite"
+cmd = "pytest"
+
+[tool.poe.tasks.format]
+help = "Format code with ruff"
+cmd = "ruff format ."
+
+[tool.poe.tasks.check]
+help = "Ruff, mypy, pyright, pytest -- the full gate"
+sequence = [
+    { cmd = "ruff check ." },
+    { cmd = "ruff format --check ." },
+    { cmd = "mypy ." },
+    { cmd = "pyright" },
+    { ref = "test" },
+]
+
+[tool.pytest.ini_options]
+filterwarnings = ["error"]
+testpaths = ["tests"]
+pythonpath = [".", "scripts"]
+
+[tool.ruff]
+line-length = 120
+extend-exclude = ["build", "types/python"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",  # pycodestyle
+    "F",       # pyflakes
+    "I",       # isort
+    "UP",      # pyupgrade
+    "B",       # bugbear
+    "SIM",     # simplify
+    "C4",      # comprehensions
+    "RUF",     # ruff-specific
+    "PTH",     # prefer pathlib
+    "ARG",     # unused arguments
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["build", "repo", "stubs", "src", "xsd10"]
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.mypy]
+strict = true
+mypy_path = ["types/python", "scripts"]
+exclude = ["^types/python/", "^build/"]
+
+[[tool.mypy.overrides]]
+module = [
+    # Generated Kodi stubs; typed via mypy_path but not our code to fix
+    "xbmc",
+    "xbmcaddon",
+    "xbmcdrm",
+    "xbmcgui",
+    "xbmcplugin",
+    "xbmcvfs",
+]
+ignore_errors = true
+
+[tool.pyright]
+typeCheckingMode = "strict"
+stubPath = "types/python"
+extraPaths = ["scripts"]
+exclude = [
+    # Build and stub directories
+    "build",
+    "types/python",
+    # Default excludes
+    "**/node_modules",
+    "**/__pycache__",
+    "**/.*",
+    ".venv",
+]

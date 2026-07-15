@@ -1,0 +1,111 @@
+# Kodi Media Center language file
+# Addon Name: Example
+# Addon id: script.example
+# Addon Provider: playday3008
+msgid ""
+msgstr ""
+"Project-Id-Version: script.example\n"
+"Report-Msgid-Bugs-To: https://github.com/playday3008/kodi.addon.example/issues\n"
+"Last-Translator: Kodi Translation Team\n"
+"Language-Team: English (United Kingdom)\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language: en_GB\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+# Settings labels (32100-32199)
+
+msgctxt "#32100"
+msgid "General"
+msgstr ""
+
+msgctxt "#32101"
+msgid "Greeting"
+msgstr ""
+
+msgctxt "#32102"
+msgid "Your name"
+msgstr ""
+
+msgctxt "#32103"
+msgid "Number of greetings"
+msgstr ""
+
+msgctxt "#32104"
+msgid "Excited"
+msgstr ""
+
+msgctxt "#32105"
+msgid "Greeting style"
+msgstr ""
+
+msgctxt "#32106"
+msgid "Classic"
+msgstr ""
+
+msgctxt "#32107"
+msgid "Formal"
+msgstr ""
+
+msgctxt "#32108"
+msgid "Pirate"
+msgstr ""
+
+# Settings help texts
+
+msgctxt "#32112"
+msgid "Name shown in the greeting dialog"
+msgstr ""
+
+msgctxt "#32113"
+msgid "How many times to repeat the greeting"
+msgstr ""
+
+msgctxt "#32114"
+msgid "End the greeting with an exclamation mark"
+msgstr ""
+
+msgctxt "#32115"
+msgid "Tone of the greeting"
+msgstr ""
+
+msgctxt "#32120"
+msgid "Advanced"
+msgstr ""
+
+msgctxt "#32121"
+msgid "Extras"
+msgstr ""
+
+msgctxt "#32122"
+msgid "Pause between greetings"
+msgstr ""
+
+msgctxt "#32123"
+msgid "Custom suffix"
+msgstr ""
+
+msgctxt "#32124"
+msgid "Export folder"
+msgstr ""
+
+msgctxt "#32125"
+msgid "Show greeting again"
+msgstr ""
+
+msgctxt "#32132"
+msgid "Seconds to wait between repeated greetings"
+msgstr ""
+
+msgctxt "#32133"
+msgid "Extra line appended when excited"
+msgstr ""
+
+msgctxt "#32134"
+msgid "Folder greetings could be exported to"
+msgstr ""
+
+msgctxt "#32135"
+msgid "Run the greeting dialog again"
+msgstr ""

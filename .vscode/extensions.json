@@ -1,0 +1,14 @@
+{
+    "recommendations": [
+        "ms-python.python",
+        "ms-python.mypy-type-checker",
+        "ms-python.isort",
+        "charliermarsh.ruff",
+        "tamasfe.even-better-toml",
+        "redhat.vscode-xml",
+        "mrorz.language-gettext",
+        "redhat.vscode-yaml",
+        "github.vscode-github-actions",
+        "davidanson.vscode-markdownlint",
+    ]
+}
