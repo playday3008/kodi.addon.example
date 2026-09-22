@@ -26,7 +26,7 @@ jobs:
         with:
           fetch-depth: 0 # tags for the duplicate check and <news>
 
-      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: astral-sh/setup-uv@v10.1.0
 
       - run: uv sync --locked
 
@@ -74,7 +74,7 @@ jobs:
           ref: ${{ github.sha }} # same commit the release built from
           fetch-depth: 0
 
-      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: astral-sh/setup-uv@v10.1.0
 
       - run: uv sync --locked
 
@@ -99,4 +99,4 @@ jobs:
           path: build/repo
 
       - id: deployment
-        uses: actions/deploy-pages@v5.0.0
+        uses: actions/deploy-pages@v5.0.1
